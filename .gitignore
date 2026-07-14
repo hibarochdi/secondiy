@@ -1,0 +1,21 @@
+# Dépendances
+node_modules/
+
+# Secrets — ne jamais pousser sur GitHub
+.env
+.env.local
+.env.production
+
+# Base de données locale
+*.db
+*.db-journal
+
+# Build frontend
+dist/
+
+# Logs
+*.log
+
+# Éditeurs / OS
+.vscode/
+.DS_Store

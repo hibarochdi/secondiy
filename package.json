@@ -1,0 +1,15 @@
+{
+  "name": "secondiy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SeconDIY — marketplace de seconde main (frontend + backend)",
+  "scripts": {
+    "install:all": "npm install --prefix frontend && npm install --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev": "npx concurrently -n FRONT,BACK -c blue,magenta \"npm run dev:frontend\" \"npm run dev:backend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

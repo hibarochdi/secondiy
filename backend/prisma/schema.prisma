@@ -1,0 +1,123 @@
+// Schéma de base de données SeconDIY
+// Documentation : https://www.prisma.io/docs
+// Note : SQLite ne supporte pas les enums Prisma, donc les rôles/statuts/types
+// sont stockés en String avec une valeur par défaut, plutôt qu'en enum.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // remplacer par "postgresql" en production
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String
+  name          String
+  firstName     String?
+  lastName      String?
+  phone         String?
+  age           Int?
+  address       String?
+  city          String?
+  avatarUrl     String?
+  bio           String?
+  trustBadge    Boolean    @default(false)
+  role          String     @default("USER") // "USER" | "ADMIN"
+  newsletterOptIn Boolean  @default(false)
+  acceptedTerms Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+
+  listings      Listing[]  @relation("SellerListings")
+  favorites     Favorite[]
+  sentMessages  Message[]  @relation("SentMessages")
+  reviewsGiven  Review[]   @relation("ReviewAuthor")
+  reviewsGot    Review[]   @relation("ReviewTarget")
+  followers     Follow[]   @relation("Following")
+  following     Follow[]   @relation("Followers")
+  conversationsA Conversation[] @relation("ConversationBuyer")
+  conversationsB Conversation[] @relation("ConversationSeller")
+}
+
+model Listing {
+  id          String    @id @default(cuid())
+  title       String
+  description String
+  price       Float
+  category    String
+  condition   String
+  size        String?
+  city        String
+  images      String    // JSON array of image URLs, stored as string for SQLite simplicity
+  status      String    @default("ACTIVE") // "ACTIVE" | "RESERVED" | "SOLD" | "DRAFT"
+  type        String    @default("vente")  // "vente" | "don"
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  seller      User      @relation("SellerListings", fields: [sellerId], references: [id])
+  sellerId    String
+
+  favorites   Favorite[]
+  conversations Conversation[]
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  listing   Listing  @relation(fields: [listingId], references: [id])
+  listingId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  listing   Listing   @relation(fields: [listingId], references: [id])
+  listingId String
+  buyer     User      @relation("ConversationBuyer", fields: [buyerId], references: [id])
+  buyerId   String
+  seller    User      @relation("ConversationSeller", fields: [sellerId], references: [id])
+  sellerId  String
+  createdAt DateTime  @default(now())
+
+  messages  Message[]
+
+  @@unique([listingId, buyerId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  senderId       String
+  body           String
+  kind           String       @default("TEXT") // "TEXT" | "OFFER" | "SYSTEM_AI"
+  createdAt      DateTime     @default(now())
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  author     User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  authorId   String
+  target     User     @relation("ReviewTarget", fields: [targetId], references: [id])
+  targetId   String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+}
+
+model Follow {
+  id          String @id @default(cuid())
+  follower    User   @relation("Followers", fields: [followerId], references: [id])
+  followerId  String
+  following   User   @relation("Following", fields: [followingId], references: [id])
+  followingId String
+
+  @@unique([followerId, followingId])
+}
