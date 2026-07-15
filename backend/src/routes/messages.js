@@ -43,7 +43,12 @@ router.post("/conversations", requireAuth, async (req, res) => {
 router.get("/conversations/:id", requireAuth, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
+    include: {
+      messages: { orderBy: { createdAt: "asc" } },
+      buyer: { select: { id: true, name: true, avatarUrl: true } },
+      seller: { select: { id: true, name: true, avatarUrl: true } },
+      listing: { select: { id: true, title: true, price: true } },
+    },
   });
   if (!conversation) return res.status(404).json({ error: "Conversation introuvable." });
   if (![conversation.buyerId, conversation.sellerId].includes(req.user.id)) {

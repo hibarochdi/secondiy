@@ -20,9 +20,13 @@ async function main() {
   // puis les comptes eux-mêmes.
   const demoListings = await prisma.listing.findMany({ where: { sellerId: { in: demoIds } } });
   const listingIds = demoListings.map(l => l.id);
+  const conversationIds = (await prisma.conversation.findMany({
+    where: { OR: [{ buyerId: { in: demoIds } }, { sellerId: { in: demoIds } }, { listingId: { in: listingIds } }] },
+    select: { id: true },
+  })).map(c => c.id);
 
-  await prisma.message.deleteMany({ where: { senderId: { in: demoIds } } });
-  await prisma.conversation.deleteMany({ where: { OR: [{ buyerId: { in: demoIds } }, { sellerId: { in: demoIds } }, { listingId: { in: listingIds } }] } });
+  await prisma.message.deleteMany({ where: { conversationId: { in: conversationIds } } });
+  await prisma.conversation.deleteMany({ where: { id: { in: conversationIds } } });
   await prisma.favorite.deleteMany({ where: { OR: [{ userId: { in: demoIds } }, { listingId: { in: listingIds } }] } });
   await prisma.review.deleteMany({ where: { OR: [{ authorId: { in: demoIds } }, { targetId: { in: demoIds } }] } });
   await prisma.follow.deleteMany({ where: { OR: [{ followerId: { in: demoIds } }, { followingId: { in: demoIds } }] } });

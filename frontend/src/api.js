@@ -1,4 +1,7 @@
-// Client API pour parler au backend SeconDIY
+// Client API pour parler au backend SeconDIY.
+// En local (npm run dev) : http://localhost:4000/api par défaut.
+// En production (Netlify) : défini via la variable d'environnement VITE_API_URL,
+// à configurer dans Netlify avec l'URL de ton backend Railway (ex: https://xxx.up.railway.app/api).
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 const TOKEN_KEY = "secondiy_token";
 
@@ -110,6 +113,9 @@ export const api = {
   // IA
   interpretSearch: (query) => fetch(`${API_URL}/ai/interpret-search`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
+  }).then(handle),
+  generateListing: (rawDescription) => fetch(`${API_URL}/ai/generate-listing`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ rawDescription }),
   }).then(handle),
 
   // Admin (réservé aux comptes role === "ADMIN")
