@@ -1,5 +1,5 @@
-// Client API pour parler au backend SeconDIY (http://localhost:4000)
-git add src/api.js
+// Client API pour parler au backend SeconDIY
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 const TOKEN_KEY = "secondiy_token";
 
 export function getToken() {
