@@ -60,12 +60,22 @@ const TRANSLATIONS = {
     vendre: "Vendre", explorer: "Explorer", messages: "Messages", profil: "Profil",
     seConnecter: "Se connecter", rechercherPlaceholder: "Je cherche une robe Zara à 200 DH…",
     langue: "Langue",
+    creerCompte: "Créer un compte", motDePasse: "Mot de passe", email: "Email",
+    nouveautesTitre: "Nouveautés", presDeToi: "Près de toi", donsTitre: "Dons du moment",
+    publierAnnonce: "Publier l'annonce", acheterMaintenant: "Acheter maintenant",
+    negocier: "Négocier", message: "Message", favoris: "Favoris", tableauDeBord: "Tableau de bord",
+    mesAnnonces: "Mes annonces", parametres: "Paramètres", deconnexion: "Déconnexion",
   },
   en: {
     accueil: "Home", categories: "Categories", nouveautes: "New", apropos: "About",
     vendre: "Sell", explorer: "Explore", messages: "Messages", profil: "Profile",
     seConnecter: "Log in", rechercherPlaceholder: "I'm looking for a Zara dress under 200 DH…",
     langue: "Language",
+    creerCompte: "Create account", motDePasse: "Password", email: "Email",
+    nouveautesTitre: "New arrivals", presDeToi: "Near you", donsTitre: "Current donations",
+    publierAnnonce: "Publish listing", acheterMaintenant: "Buy now",
+    negocier: "Negotiate", message: "Message", favoris: "Favorites", tableauDeBord: "Dashboard",
+    mesAnnonces: "My listings", parametres: "Settings", deconnexion: "Log out",
   },
 };
 const LANG_KEY = "secondiy_lang";
@@ -74,6 +84,23 @@ function useLang() {
   const setLang = (l) => { localStorage.setItem(LANG_KEY, l); setLangState(l); };
   const t = (key) => TRANSLATIONS[lang]?.[key] ?? TRANSLATIONS.fr[key] ?? key;
   return { lang, setLang, t };
+}
+
+// Upload réel d'une image vers Cloudinary (stockage cloud gratuit).
+// Configuré via VITE_CLOUDINARY_CLOUD_NAME et VITE_CLOUDINARY_UPLOAD_PRESET (voir .env.production).
+async function uploadImageToCloudinary(file) {
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const preset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+  if (!cloudName || !preset) {
+    throw new Error("L'upload de photos n'est pas encore configuré (Cloudinary manquant).");
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", preset);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: form });
+  if (!res.ok) throw new Error("Échec de l'envoi de la photo.");
+  const data = await res.json();
+  return data.secure_url;
 }
 
 /* Logo officiel SeconDIY — monogramme découpé et détouré à partir du fichier fourni.
@@ -365,7 +392,7 @@ function Trending({ listings, onOpen, favs, toggleFav }) {
 }
 
 /* ---------------- home ---------------- */
-function Home({ listings, onOpen, favs, toggleFav, setView, onStartDonate, user }) {
+function Home({ listings, onOpen, favs, toggleFav, setView, onStartDonate, user, t = (k) => k }) {
   const [filter, setFilter] = useState("Tout");
   const [loading, setLoading] = useState(true);
   useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, [filter]);
@@ -433,7 +460,7 @@ function Home({ listings, onOpen, favs, toggleFav, setView, onStartDonate, user 
 
       <section className="max-w-6xl mx-auto px-5 md:px-8 py-4">
         <div className="flex items-center gap-2 text-[13px] text-[var(--text-dim)] mb-5">
-          <MapPin size={13} className="text-[var(--accent)]" /> Près de toi
+          <MapPin size={13} className="text-[var(--accent)]" /> {t("presDeToi")}
         </div>
 
         {geoStatus === "loading" && (
@@ -493,7 +520,7 @@ function Home({ listings, onOpen, favs, toggleFav, setView, onStartDonate, user 
 
       <section id="grid" className="max-w-6xl mx-auto px-5 md:px-8 py-14">
         <div className="flex items-center justify-between mb-7 flex-wrap gap-3">
-          <h2 className="font-serif text-[24px] text-[var(--text)]">Nouveautés</h2>
+          <h2 className="font-serif text-[24px] text-[var(--text)]">{t("nouveautesTitre")}</h2>
           <div className="flex gap-1.5 flex-wrap">
             {cats.map(c => (
               <button key={c} onClick={() => setFilter(c)}
@@ -752,31 +779,41 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
   const [gen, setGen] = useState(null); // { title, desc, cat, price, condition }
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photos, setPhotos] = useState([]); // [{ file, previewUrl }]
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState(null);
   const fileInputRef = useRef(null);
+  const MAX_PHOTOS = 6;
 
-  const steps = ["Photo", "Description", "Aperçu"];
+  const steps = ["Photos", "Description", "Aperçu"];
 
   const openPicker = () => fileInputRef.current?.click();
 
-  const handleFile = (file) => {
-    if (!file) return;
-    setPhotoUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+  const addFiles = (fileList) => {
+    const files = Array.from(fileList || []).slice(0, MAX_PHOTOS - photos.length);
+    if (!files.length) return;
+    const added = files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }));
+    setPhotos(prev => [...prev, ...added]);
     setStep(2);
   };
 
+  const removePhoto = (i) => {
+    setPhotos(prev => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); });
+  };
+
   const onFileInputChange = (e) => {
-    const file = e.target.files?.[0];
-    handleFile(file);
+    addFiles(e.target.files);
     e.target.value = "";
   };
 
   const onDropFile = (e) => {
     e.preventDefault();
     setDrag(false);
-    const file = e.dataTransfer.files?.[0];
-    handleFile(file);
+    addFiles(e.dataTransfer.files);
   };
+
+  const CONDITIONS = ["Neuf avec étiquette", "Comme neuf", "Très bon état", "Bon état", "Usé"];
+  const DELIVERY = ["Remise en main propre", "À discuter avec l'acheteur"];
 
   // Envoie la courte description à l'assistant IA réel (Claude, côté serveur) pour
   // générer titre / description détaillée / catégorie / état / prix suggéré.
@@ -786,12 +823,17 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
     setAnalyzeError(null);
     try {
       const { listing } = await api.generateListing(rawDesc);
+      const suggested = mode === "don" ? 0 : listing.suggestedPrice;
       setGen({
         title: listing.title,
         desc: listing.description,
         cat: listing.category,
-        condition: listing.condition,
-        price: mode === "don" ? 0 : listing.suggestedPrice,
+        condition: CONDITIONS.includes(listing.condition) ? listing.condition : "Bon état",
+        price: suggested,
+        suggestedPrice: suggested, // gardé intact pour affichage honnête, même si l'utilisateur modifie le prix ensuite
+        size: "",
+        city: "",
+        delivery: DELIVERY[0],
       });
       setStep(3);
     } catch (err) {
@@ -801,16 +843,30 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
   };
 
   const skipAI = () => {
-    setGen({ title: rawDesc.slice(0, 60) || "Article à vendre", desc: rawDesc, cat: "Mode", condition: "Bon état", price: mode === "don" ? 0 : 0 });
+    setGen({
+      title: rawDesc.slice(0, 60) || "Article à vendre", desc: rawDesc, cat: "Mode",
+      condition: "Bon état", price: mode === "don" ? 0 : 0, suggestedPrice: null,
+      size: "", city: "", delivery: DELIVERY[0],
+    });
     setStep(3);
   };
 
-  const publish = () => {
-    onPublish?.({
-      title: gen.title, desc: gen.desc, cat: gen.cat, condition: gen.condition,
-      price: mode === "don" ? 0 : gen.price, type: mode,
-    });
-    setView("home");
+  const publish = async () => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const urls = await Promise.all(photos.map(p => uploadImageToCloudinary(p.file)));
+      await onPublish?.({
+        title: gen.title, desc: gen.desc, cat: gen.cat, condition: gen.condition,
+        size: gen.size, city: gen.city, delivery: gen.delivery,
+        price: mode === "don" ? 0 : gen.price, type: mode,
+        images: urls,
+      });
+      setView("home");
+    } catch (err) {
+      setPublishError(err.message || "La publication a échoué.");
+    }
+    setPublishing(false);
   };
 
   return (
@@ -843,24 +899,47 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
 
       {step === 1 && (
         <>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFileInputChange} />
-          <button
-            onClick={openPicker}
-            onDragOver={e => { e.preventDefault(); setDrag(true); }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={onDropFile}
-            className={`w-full aspect-video rounded-2xl border-2 border-dashed grid place-items-center gap-2 transition-all duration-200 ${drag ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]" : "border-[var(--border)] hover:border-[var(--accent)]/50"}`}
-          >
-            <ImagePlus size={28} className="text-[var(--text-dim)]" />
-            <span className="text-[13.5px] text-[var(--text-dim)]">Glisse une photo, ou clique pour choisir</span>
-          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onFileInputChange} />
+          {photos.length === 0 ? (
+            <button
+              onClick={openPicker}
+              onDragOver={e => { e.preventDefault(); setDrag(true); }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={onDropFile}
+              className={`w-full aspect-video rounded-2xl border-2 border-dashed grid place-items-center gap-2 transition-all duration-200 ${drag ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]" : "border-[var(--border)] hover:border-[var(--accent)]/50"}`}
+            >
+              <ImagePlus size={28} className="text-[var(--text-dim)]" />
+              <span className="text-[13.5px] text-[var(--text-dim)]">Glisse 3 à 6 photos, ou clique pour choisir</span>
+            </button>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((p, i) => (
+                <div key={p.previewUrl} className="relative aspect-square rounded-xl overflow-hidden group">
+                  <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removePhoto(i)} className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <button onClick={openPicker} className="aspect-square rounded-xl border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)]/50 grid place-items-center text-[var(--text-dim)]">
+                  <Plus size={20} />
+                </button>
+              )}
+            </div>
+          )}
+          {photos.length > 0 && (
+            <button onClick={() => setStep(2)} className="w-full h-12 mt-4 rounded-full bg-[var(--accent)] text-white text-[14px] font-medium hover:brightness-110 transition-all flex items-center justify-center gap-2 active:scale-95">
+              Continuer <ArrowRight size={15} />
+            </button>
+          )}
         </>
       )}
 
       {step === 2 && (
         <div className="space-y-5 animate-rise">
-          <div className="aspect-video rounded-2xl overflow-hidden">
-            <ProductVisual p={{ title: "aperçu", img: photoUrl ? `center/cover url(${photoUrl})` : "linear-gradient(135deg,#5c4632,#141210)" }} />
+          <div className="grid grid-cols-4 gap-1.5">
+            {photos.map(p => <img key={p.previewUrl} src={p.previewUrl} alt="" className="aspect-square rounded-lg object-cover" />)}
           </div>
           <div>
             <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Décris ton article en quelques mots</label>
@@ -883,8 +962,8 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
 
       {step === 3 && gen && (
         <div className="space-y-5 animate-rise">
-          <div className="aspect-video rounded-2xl overflow-hidden">
-            <ProductVisual p={{ title: gen.title, img: photoUrl ? `center/cover url(${photoUrl})` : "linear-gradient(135deg,#5c4632,#141210)" }} />
+          <div className="grid grid-cols-4 gap-1.5">
+            {photos.map(p => <img key={p.previewUrl} src={p.previewUrl} alt="" className="aspect-square rounded-lg object-cover" />)}
           </div>
           <div className="flex items-center gap-1.5 text-[12px] text-[var(--accent)] font-medium">
             <Sparkles size={13} /> Généré par l'assistant — modifiable avant publication
@@ -906,18 +985,57 @@ function Vendre({ setView, initialMode = "vente", onPublish }) {
                 className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
             </div>
             <div className="flex-1">
-              <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Prix</label>
-              {mode === "don" ? (
-                <div className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[14px] text-[var(--accent)] flex items-center font-medium">Gratuit (don)</div>
-              ) : (
-                <input type="number" value={gen.price} onChange={e => setGen(g => ({ ...g, price: Number(e.target.value) }))}
-                  className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
-              )}
+              <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">État</label>
+              <select value={gen.condition} onChange={e => setGen(g => ({ ...g, condition: e.target.value }))}
+                className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]">
+                {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
           </div>
 
-          <button onClick={publish} className="w-full h-12 rounded-full bg-[var(--accent)] text-white text-[14px] font-medium hover:brightness-110 transition-all flex items-center justify-center gap-2 active:scale-95">
-            <Check size={16} /> {mode === "don" ? "Publier le don" : "Publier l'annonce"}
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Taille (optionnel)</label>
+              <input value={gen.size} onChange={e => setGen(g => ({ ...g, size: e.target.value }))} placeholder="M, 42, unique…"
+                className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+            </div>
+            <div className="flex-1">
+              <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Ville</label>
+              <input value={gen.city} onChange={e => setGen(g => ({ ...g, city: e.target.value }))} placeholder="Casablanca…"
+                className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Prix</label>
+            {mode === "don" ? (
+              <div className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[14px] text-[var(--accent)] flex items-center font-medium">Gratuit (don)</div>
+            ) : (
+              <>
+                <input type="number" value={gen.price} onChange={e => setGen(g => ({ ...g, price: Number(e.target.value) }))}
+                  className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+                {gen.suggestedPrice != null && (
+                  <p className="text-[11.5px] text-[var(--text-dim)] mt-1">💡 Prix conseillé par l'assistant : {gen.suggestedPrice} DH</p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div>
+            <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Remise de l'article</label>
+            <div className="flex gap-2 mt-1">
+              {DELIVERY.map(d => (
+                <button key={d} type="button" onClick={() => setGen(g => ({ ...g, delivery: d }))}
+                  className={`flex-1 h-11 rounded-lg border text-[12.5px] transition-colors ${gen.delivery === d ? "border-[var(--accent)] bg-[var(--accent)]/5 text-[var(--text)]" : "border-[var(--border)] text-[var(--text-dim)]"}`}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {publishError && <p className="text-[12.5px] text-[var(--accent)]">{publishError}</p>}
+          <button onClick={publish} disabled={publishing} className="w-full h-12 rounded-full bg-[var(--accent)] text-white text-[14px] font-medium hover:brightness-110 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60">
+            {publishing ? <RotateCw size={15} className="animate-spin" /> : <Check size={16} />} {publishing ? "Envoi des photos et publication…" : mode === "don" ? "Publier le don" : "Publier l'annonce"}
           </button>
         </div>
       )}
@@ -981,7 +1099,7 @@ function Chat({ user, openConversationId, setView }) {
         )}
         <div className="space-y-1.5">
           {conversations?.map(c => {
-            const other = c.buyer.id === user.id ? c.seller : c.buyer;
+            const other = c.buyer?.id === user?.id ? c.seller : c.buyer;
             const last = c.messages[0];
             return (
               <button key={c.id} onClick={() => setActiveId(c.id)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--surface-2)] transition-colors text-left">
@@ -999,7 +1117,7 @@ function Chat({ user, openConversationId, setView }) {
   }
 
   // Vue fil de discussion
-  const other = thread ? (thread.buyer?.id === user.id ? thread.seller : thread.buyer) : null;
+  const other = thread ? (thread.buyer?.id === user?.id ? thread.seller : thread.buyer) : null;
   return (
     <div className="max-w-2xl mx-auto px-5 md:px-8 py-6 h-[calc(100vh-64px)] flex flex-col">
       <div className="flex items-center gap-3 pb-4 border-b border-[var(--border)]">
@@ -1015,8 +1133,8 @@ function Chat({ user, openConversationId, setView }) {
         {!thread && <p className="text-[13px] text-[var(--text-dim)]">Chargement…</p>}
         {thread?.messages.length === 0 && <p className="text-[13px] text-[var(--text-dim)]">Dis bonjour pour démarrer la conversation 👋</p>}
         {thread?.messages.map(m => (
-          <div key={m.id} className={`flex animate-rise ${m.senderId === user.id ? "justify-end" : "justify-start"}`}>
-            <div className={`px-4 py-2.5 rounded-2xl text-[13.5px] max-w-[75%] ${m.senderId === user.id ? "bg-[var(--accent)] text-white rounded-br-md" : "bg-[var(--surface-2)] text-[var(--text)] rounded-bl-md"}`}>
+          <div key={m.id} className={`flex animate-rise ${m.senderId === user?.id ? "justify-end" : "justify-start"}`}>
+            <div className={`px-4 py-2.5 rounded-2xl text-[13.5px] max-w-[75%] ${m.senderId === user?.id ? "bg-[var(--accent)] text-white rounded-br-md" : "bg-[var(--surface-2)] text-[var(--text)] rounded-bl-md"}`}>
               {m.body}
             </div>
           </div>
@@ -1313,7 +1431,7 @@ function VendeurProfil({ sellerId, setView, onOpenProduct, currentUser }) {
 
 
 function Connexion({ setView, onAuthed }) {
-  const [mode, setMode] = useState("login"); // "login" | "register"
+  const [mode, setMode] = useState("login"); // "login" | "register" | "forgot"
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({
     firstName: "", lastName: "", email: "", password: "", phone: "", age: "",
@@ -1321,9 +1439,22 @@ function Connexion({ setView, onAuthed }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
 
   const update = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const toggle = (k) => () => setForm(f => ({ ...f, [k]: !f[k] }));
+
+  const submitForgot = async () => {
+    setError(""); setLoading(true);
+    try {
+      await api.forgotPassword(form.email);
+      setForgotSent(true);
+    } catch (err) {
+      setError(err.message || "Une erreur est survenue.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const submit = async () => {
     setError(""); setLoading(true);
@@ -1354,6 +1485,35 @@ function Connexion({ setView, onAuthed }) {
       <input value={form[key]} onChange={update(key)} type={type} placeholder={placeholder} {...extraProps} className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text)]" />
     </div>
   );
+
+  if (mode === "forgot") {
+    return (
+      <div className="max-w-sm mx-auto px-5 py-16 animate-fade-in">
+        <div className="text-center mb-9">
+          <img src={LOGO_ICON_DARK} alt="SeconDIY" className="h-12 w-auto object-contain mx-auto mb-3" />
+          <h1 className="font-serif text-[24px] text-[var(--text)]">Mot de passe oublié</h1>
+          <p className="text-[13px] text-[var(--text-dim)] mt-1">On t'envoie un lien pour en choisir un nouveau.</p>
+        </div>
+        {forgotSent ? (
+          <div className="text-center space-y-4">
+            <p className="text-[13.5px] text-[var(--text)]">Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé — vérifie ta boîte mail (et tes spams).</p>
+            <button onClick={() => { setMode("login"); setForgotSent(false); }} className="text-[13px] text-[var(--accent)]">Retour à la connexion</button>
+          </div>
+        ) : (
+          <div className="space-y-3.5">
+            {field(<Mail size={15} className="text-[var(--text-dim)]" />, "email", "Adresse email", "email")}
+            {error && <p className="text-[12.5px] text-[var(--accent)]">{error}</p>}
+            <button onClick={submitForgot} disabled={loading || !form.email} className="w-full h-12 rounded-full bg-[var(--text)] text-[var(--bg)] text-[14px] font-medium hover:bg-[var(--accent)] hover:text-white transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60">
+              {loading ? <RotateCw size={16} className="animate-spin" /> : "Envoyer le lien"}
+            </button>
+            <p className="text-center text-[12.5px] text-[var(--text-dim)] pt-1">
+              <span onClick={() => setMode("login")} className="text-[var(--accent)] cursor-pointer">Retour à la connexion</span>
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-sm mx-auto px-5 py-16 animate-fade-in">
@@ -1389,6 +1549,12 @@ function Connexion({ setView, onAuthed }) {
           <button onClick={() => setShowPw(s => !s)}>{showPw ? <EyeOff size={15} className="text-[var(--text-dim)]" /> : <Eye size={15} className="text-[var(--text-dim)]" />}</button>
         </div>
 
+        {mode === "login" && (
+          <p className="text-right -mt-2">
+            <span onClick={() => setMode("forgot")} className="text-[12px] text-[var(--accent)] cursor-pointer">Mot de passe oublié ?</span>
+          </p>
+        )}
+
         {mode === "register" && (
           <div className="space-y-2.5 pt-1">
             <label className="flex items-start gap-2.5 cursor-pointer">
@@ -1419,7 +1585,57 @@ function Connexion({ setView, onAuthed }) {
   );
 }
 
-/* ---------------- mes annonces ---------------- */
+function ResetPasswordScreen({ email, token, setView }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const submit = async () => {
+    setError(""); setLoading(true);
+    try {
+      await api.resetPassword(email, token, newPassword);
+      setDone(true);
+    } catch (err) {
+      setError(err.message || "Une erreur est survenue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div className="max-w-sm mx-auto px-5 py-16 animate-fade-in text-center space-y-4">
+        <Check size={32} className="text-[var(--accent)] mx-auto" />
+        <h1 className="font-serif text-[22px] text-[var(--text)]">Mot de passe mis à jour</h1>
+        <p className="text-[13.5px] text-[var(--text-dim)]">Tu peux maintenant te connecter avec ton nouveau mot de passe.</p>
+        <button onClick={() => setView("connexion")} className="px-6 h-11 rounded-full bg-[var(--accent)] text-white text-[13.5px] font-medium hover:brightness-110 transition-all">Se connecter</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-sm mx-auto px-5 py-16 animate-fade-in">
+      <div className="text-center mb-9">
+        <img src={LOGO_ICON_DARK} alt="SeconDIY" className="h-12 w-auto object-contain mx-auto mb-3" />
+        <h1 className="font-serif text-[24px] text-[var(--text)]">Nouveau mot de passe</h1>
+        <p className="text-[13px] text-[var(--text-dim)] mt-1">Pour {email}</p>
+      </div>
+      <div className="space-y-3.5">
+        <div className="flex items-center gap-2.5 h-12 px-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] focus-within:border-[var(--accent)]">
+          <Lock size={15} className="text-[var(--text-dim)]" />
+          <input value={newPassword} onChange={e => setNewPassword(e.target.value)} type="password" placeholder="Nouveau mot de passe" className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text)]" />
+        </div>
+        {error && <p className="text-[12.5px] text-[var(--accent)]">{error}</p>}
+        <button onClick={submit} disabled={loading || newPassword.length < 6} className="w-full h-12 rounded-full bg-[var(--text)] text-[var(--bg)] text-[14px] font-medium hover:bg-[var(--accent)] hover:text-white transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60">
+          {loading ? <RotateCw size={16} className="animate-spin" /> : "Réinitialiser le mot de passe"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 function MesAnnonces({ setView, user, onDelete }) {
   const [items, setItems] = useState(null); // null = en cours de chargement
   const [error, setError] = useState(null);
@@ -2050,7 +2266,14 @@ function MobileTabBar({ view, setView, t }) {
 
 /* ---------------- APP ---------------- */
 export default function App() {
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("reset") && params.get("email") ? "resetPassword" : "home";
+  });
+  const resetParams = (() => {
+    const params = new URLSearchParams(window.location.search);
+    return { token: params.get("reset"), email: params.get("email") };
+  })();
   const [listings, setListings] = useState([]);
   const [loadingListings, setLoadingListings] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
@@ -2106,14 +2329,16 @@ export default function App() {
   const publishListing = async (data) => {
     if (!user) { setView("connexion"); return; }
     try {
+      const deliveryNote = data.delivery ? `\n\nRemise : ${data.delivery}` : "";
       const { listing } = await api.createListing({
         title: data.title,
-        description: data.desc || "Article publié depuis SeconDIY.",
+        description: (data.desc || "Article publié depuis SeconDIY.") + deliveryNote,
         price: data.price,
         category: data.cat,
         condition: data.condition || "Bon état",
-        city: user.city || "Casablanca",
-        images: [`https://picsum.photos/seed/${encodeURIComponent(data.title)}/600/600`],
+        size: data.size || undefined,
+        city: data.city || user.city || "Casablanca",
+        images: data.images?.length ? data.images : [`https://picsum.photos/seed/${encodeURIComponent(data.title)}/600/600`],
         type: data.type,
       });
       setListings(prev => [normalizeListing({ ...listing, seller: user }), ...prev]);
@@ -2192,7 +2417,7 @@ export default function App() {
 
       <NavBar setView={setView} favCount={favs.size} dark={dark} setDark={setDark} user={user} lang={lang} setLang={setLang} t={t} />
       <div key={view} className="pb-20 sm:pb-0">
-        {view === "home" && <Home listings={listings} onOpen={openProduct} favs={favs} toggleFav={toggleFav} setView={setView} onStartDonate={startDonate} user={user} />}
+        {view === "home" && <Home listings={listings} onOpen={openProduct} favs={favs} toggleFav={toggleFav} setView={setView} onStartDonate={startDonate} user={user} t={t} />}
         {view === "categories" && <Categories listings={listings} onOpen={openProduct} favs={favs} toggleFav={toggleFav} setView={setView} />}
         {view === "nouveautes" && <Nouveautes listings={listings} onOpen={openProduct} favs={favs} toggleFav={toggleFav} />}
         {view === "apropos" && <APropos />}
@@ -2203,6 +2428,7 @@ export default function App() {
         {view === "profil" && <Profil setView={setView} user={user} />}
         {view === "favoris" && <Favoris listings={listings} favs={favs} onOpen={openProduct} toggleFav={toggleFav} />}
         {view === "connexion" && <Connexion setView={setView} onAuthed={handleAuthed} />}
+        {view === "resetPassword" && <ResetPasswordScreen email={resetParams.email} token={resetParams.token} setView={setView} />}
         {view === "mesAnnonces" && <MesAnnonces setView={setView} user={user} onDelete={deleteListingHandler} />}
         {view === "parametres" && (user ? <Parametres user={user} setUser={setUser} onAuthed={handleAuthed} setView={setView} lang={lang} setLang={setLang} /> : <AccessDenied setView={setView} />)}
         {view === "dashboard" && <Dashboard user={user} />}

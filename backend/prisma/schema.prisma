@@ -29,6 +29,8 @@ model User {
   role          String     @default("USER") // "USER" | "ADMIN"
   newsletterOptIn Boolean  @default(false)
   acceptedTerms Boolean    @default(false)
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
   createdAt     DateTime   @default(now())
 
   listings      Listing[]  @relation("SellerListings")
