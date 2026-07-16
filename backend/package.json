@@ -1,10 +1,31 @@
-"scripts": {
-  "dev": "nodemon src/index.js",
-  "start": "node src/index.js",
-  "build": "prisma generate && prisma migrate deploy",
-  "postinstall": "prisma generate",
-  "prisma:migrate": "prisma migrate dev --name init",
-  "prisma:studio": "prisma studio",
-  "seed": "node prisma/seed.js",
-  "clean-demo": "node prisma/clean-demo.js"
-},
+{
+  "name": "secondie-backend",
+  "version": "1.0.0",
+  "description": "API backend pour Secondie — marketplace de seconde main",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "build": "prisma generate && prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js",
+    "clean-demo": "node prisma/clean-demo.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "prisma": "^5.20.0"
+  }
+}
