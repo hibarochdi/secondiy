@@ -1158,7 +1158,7 @@ function Chat({ user, openConversationId, setView }) {
 function AIChatbot({ onOpenProduct, listings }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { from: "bot", text: "Salut 👋 Dis-moi ce que tu cherches, je m'occupe du reste." },
+    { from: "bot", text: "Salut 👋 Je suis SeconBot. Je peux t'aider à trouver un article, vendre le tien, ou répondre à tes questions sur l'app (livraison, compte, sécurité…). Dis-moi tout !" },
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -1171,14 +1171,11 @@ function AIChatbot({ onOpenProduct, listings }) {
     setInput("");
     setTyping(true);
     try {
-      const { listings: found } = await api.interpretSearch(text);
-      const picks = (found || []).map(normalizeListing).slice(0, 2);
-      const reply = picks.length
-        ? { from: "bot", text: "Voilà ce que j'ai trouvé pour toi :", picks }
-        : { from: "bot", text: "Je n'ai rien trouvé qui corresponde pour l'instant — essaie une autre recherche, ou reviens plus tard, de nouvelles annonces arrivent régulièrement." };
-      setMessages(m => [...m, reply]);
+      const res = await api.chat(text);
+      const picks = (res.listings || []).map(normalizeListing).slice(0, 4);
+      setMessages(m => [...m, { from: "bot", text: res.reply, picks: picks.length ? picks : undefined }]);
     } catch (err) {
-      setMessages(m => [...m, { from: "bot", text: "L'assistant IA n'est pas disponible pour l'instant (le service peut être momentanément indisponible ou pas encore configuré côté serveur)." }]);
+      setMessages(m => [...m, { from: "bot", text: "L'assistant n'est pas disponible pour l'instant — réessaie dans un instant." }]);
     }
     setTyping(false);
   };
