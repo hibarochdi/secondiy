@@ -1284,8 +1284,9 @@ function Profil({ setView, user }) {
           <div className="w-24 h-24 rounded-full bg-[var(--surface)] border-4 border-[var(--bg)] grid place-items-center text-[var(--accent)] font-serif text-[30px] shadow-lg">{displayName.charAt(0)}</div>
         </div>
         <p className="font-serif text-[20px] text-[var(--text)] mt-3">{displayName}</p>
-        <p className="text-[12.5px] text-[var(--text-dim)] flex items-center gap-1 mt-0.5">
+        <p className="text-[12.5px] text-[var(--text-dim)] flex items-center gap-1 mt-0.5 flex-wrap">
           {user.trustBadge && <><ShieldCheck size={13} className="text-[var(--accent)]" /> Vendeur·se vérifié·e · </>}
+          {user.phoneVerified && <><ShieldCheck size={13} className="text-[var(--accent)]" /> Compte vérifié · </>}
           {displayCity}
         </p>
 
@@ -1430,12 +1431,20 @@ function VendeurProfil({ sellerId, setView, onOpenProduct, currentUser }) {
 }
 
 
+// Villes marocaines utilisées pour l'auto-suggestion dans le formulaire d'inscription.
+const MOROCCAN_CITIES = [
+  "Casablanca", "Rabat", "Marrakech", "Fès", "Tanger", "Agadir", "Meknès", "Oujda",
+  "Kénitra", "Tétouan", "Salé", "Essaouira", "El Jadida", "Nador", "Béni Mellal",
+  "Safi", "Khouribga", "Settat", "Laâyoune", "Mohammedia", "Berkane", "Taza",
+];
+const COUNTRIES = ["Maroc", "France", "Espagne", "Belgique", "Autre"];
+
 function Connexion({ setView, onAuthed }) {
   const [mode, setMode] = useState("login"); // "login" | "register" | "forgot"
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({
     firstName: "", lastName: "", email: "", password: "", phone: "", age: "",
-    address: "", city: "", newsletterOptIn: false, acceptedTerms: false,
+    address: "", country: "Maroc", city: "", newsletterOptIn: false, acceptedTerms: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1466,7 +1475,7 @@ function Connexion({ setView, onAuthed }) {
         if (!form.acceptedTerms) throw new Error("Tu dois accepter la politique de confidentialité pour créer un compte.");
         const result = await api.register({
           firstName: form.firstName, lastName: form.lastName, email: form.email, password: form.password,
-          phone: form.phone, age: Number(form.age), address: form.address, city: form.city,
+          phone: form.phone, age: Number(form.age), address: form.address, country: form.country, city: form.city,
           newsletterOptIn: form.newsletterOptIn, acceptedTerms: form.acceptedTerms,
         });
         onAuthed(result.token, result.user);
@@ -1539,7 +1548,20 @@ function Connexion({ setView, onAuthed }) {
               {field(<User size={15} className="text-[var(--text-dim)]" />, "age", "Âge (18 ans minimum)", "number", { min: 18, max: 120 })}
             </div>
             {field(<MapPin size={15} className="text-[var(--text-dim)]" />, "address", "Adresse")}
-            {field(<MapPin size={15} className="text-[var(--text-dim)]" />, "city", "Ville")}
+            <div className="flex items-center gap-2.5 h-12 px-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] focus-within:border-[var(--accent)]">
+              <MapPin size={15} className="text-[var(--text-dim)]" />
+              <select value={form.country} onChange={update("country")} className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text)] appearance-none">
+                {COUNTRIES.map(c => <option key={c} value={c} className="bg-[var(--surface)] text-[var(--text)]">{c}</option>)}
+              </select>
+              <ChevronDown size={14} className="text-[var(--text-dim)]" />
+            </div>
+            <div className="flex items-center gap-2.5 h-12 px-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] focus-within:border-[var(--accent)]">
+              <MapPin size={15} className="text-[var(--text-dim)]" />
+              <input value={form.city} onChange={update("city")} list="moroccan-cities" placeholder="Ville" className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text)]" />
+            </div>
+            <datalist id="moroccan-cities">
+              {MOROCCAN_CITIES.map(c => <option key={c} value={c} />)}
+            </datalist>
           </>
         )}
 
@@ -1724,6 +1746,61 @@ function Parametres({ user, setUser, onAuthed, setView, lang, setLang }) {
   );
 }
 
+// Vérification du téléphone par code SMS : demande un code, puis le saisit pour obtenir le badge "Compte vérifié".
+function PhoneVerification({ user, setUser, phoneDirty }) {
+  const [step, setStep] = useState("idle"); // idle | sent
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  if (phoneDirty) {
+    return <p className="text-[12px] text-[var(--text-dim)] mt-1.5">Enregistre d'abord ce nouveau numéro avant de le vérifier.</p>;
+  }
+  if (user.phoneVerified) return null;
+  if (!user.phone) return null;
+
+  const sendCode = async () => {
+    setLoading(true); setMsg(null);
+    try {
+      await api.sendPhoneCode();
+      setStep("sent");
+      setMsg({ type: "ok", text: "Code envoyé par SMS." });
+    } catch (err) { setMsg({ type: "error", text: err.message }); }
+    setLoading(false);
+  };
+
+  const verify = async () => {
+    setLoading(true); setMsg(null);
+    try {
+      const { user: updated } = await api.verifyPhoneCode(code);
+      setUser(updated);
+      setMsg({ type: "ok", text: "Numéro vérifié ✅" });
+      setStep("idle"); setCode("");
+    } catch (err) { setMsg({ type: "error", text: err.message }); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      {step === "idle" ? (
+        <button onClick={sendCode} disabled={loading} className="h-8 px-3.5 rounded-full border border-[var(--border)] text-[12px] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-60">
+          {loading ? "Envoi…" : "Vérifier mon numéro"}
+        </button>
+      ) : (
+        <>
+          <input value={code} onChange={e => setCode(e.target.value)} placeholder="Code à 6 chiffres" maxLength={6}
+            className="h-8 w-32 px-3 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+          <button onClick={verify} disabled={loading || code.length < 4} className="h-8 px-3.5 rounded-full bg-[var(--text)] text-[var(--bg)] text-[12px] font-medium hover:bg-[var(--accent)] hover:text-white transition-colors disabled:opacity-60">
+            {loading ? "…" : "Confirmer"}
+          </button>
+          <button onClick={sendCode} disabled={loading} className="text-[11.5px] text-[var(--accent)]">Renvoyer le code</button>
+        </>
+      )}
+      {msg && <p className={`w-full text-[12px] ${msg.type === "ok" ? "text-green-600" : "text-[var(--accent)]"}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
 function ProfilSection({ user, setUser }) {
   const [form, setForm] = useState({ name: user.name || "", bio: user.bio || "", city: user.city || "", phone: user.phone || "" });
   const [saving, setSaving] = useState(false);
@@ -1745,13 +1822,22 @@ function ProfilSection({ user, setUser }) {
         <div className="w-16 h-16 rounded-full bg-[var(--accent)]/15 grid place-items-center text-[var(--accent)] font-serif text-[22px]">{user.name?.charAt(0)?.toUpperCase()}</div>
         <p className="text-[12.5px] text-[var(--text-dim)]">La photo de profil n'est pas encore personnalisable — elle utilise ton initiale pour l'instant.</p>
       </div>
-      {[["name", "Nom complet"], ["city", "Ville"], ["phone", "Téléphone"]].map(([k, l]) => (
+      {[["name", "Nom complet"], ["city", "Ville"]].map(([k, l]) => (
         <div key={k}>
           <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">{l}</label>
           <input value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
             className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
         </div>
       ))}
+      <div>
+        <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)] flex items-center gap-1.5">
+          Téléphone
+          {user.phoneVerified && <span className="flex items-center gap-1 text-[var(--accent)] normal-case tracking-normal"><ShieldCheck size={12} /> Compte vérifié</span>}
+        </label>
+        <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+          className="w-full mt-1 h-11 px-3.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[14px] text-[var(--text)] outline-none focus:border-[var(--accent)]" />
+        <PhoneVerification user={user} setUser={setUser} phoneDirty={form.phone !== (user.phone || "")} />
+      </div>
       <div>
         <label className="text-[11.5px] uppercase tracking-wide text-[var(--text-dim)]">Bio</label>
         <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={3} maxLength={300}

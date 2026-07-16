@@ -16,6 +16,7 @@ const registerSchema = z.object({
   phone: z.string().min(6, "Numéro de téléphone invalide"),
   age: z.coerce.number().int().min(18, "Tu dois avoir au moins 18 ans pour créer un compte.").max(120),
   address: z.string().min(3, "Adresse requise"),
+  country: z.string().min(2, "Pays requis").optional().default("Maroc"),
   city: z.string().min(2, "Ville requise"),
   newsletterOptIn: z.boolean().optional().default(false),
   acceptedTerms: z.literal(true, {
@@ -30,7 +31,7 @@ router.post("/register", async (req, res) => {
     const firstIssue = parsed.error.issues[0];
     return res.status(400).json({ error: firstIssue?.message || "Données invalides.", details: parsed.error.flatten() });
   }
-  const { firstName, lastName, email, password, phone, age, address, city, newsletterOptIn, acceptedTerms } = parsed.data;
+  const { firstName, lastName, email, password, phone, age, address, country, city, newsletterOptIn, acceptedTerms } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -41,7 +42,7 @@ router.post("/register", async (req, res) => {
   const user = await prisma.user.create({
     data: {
       name: `${firstName} ${lastName}`.trim(),
-      firstName, lastName, email, passwordHash, phone, age, address, city,
+      firstName, lastName, email, passwordHash, phone, age, address, country, city,
       newsletterOptIn, acceptedTerms,
     },
   });
@@ -93,7 +94,7 @@ function signToken(user) {
 }
 
 function publicUser(user) {
-  const { passwordHash, ...rest } = user;
+  const { passwordHash, phoneVerifyCodeHash, phoneVerifyExpiresAt, resetTokenHash, resetTokenExpiresAt, ...rest } = user;
   return rest;
 }
 
@@ -109,7 +110,10 @@ async function withStats(user) {
     ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length) * 10) / 10
     : null; // pas encore d'avis reçu
 
-  return { ...publicUser(user), salesCount, listingsCount, followersCount, rating };
+  let stylePrefs = [];
+  try { stylePrefs = user.stylePrefs ? JSON.parse(user.stylePrefs) : []; } catch (_) {}
+
+  return { ...publicUser(user), stylePrefs, salesCount, listingsCount, followersCount, rating };
 }
 
 // GET /api/auth/me/reviews — vrais avis reçus par l'utilisateur connecté (vide s'il n'y en a pas)
@@ -126,15 +130,95 @@ router.get("/me/reviews", requireAuth, async (req, res) => {
 const updateProfileSchema = z.object({
   name: z.string().min(2).optional(),
   bio: z.string().max(300).optional(),
+  country: z.string().min(2).optional(),
   city: z.string().min(2).optional(),
   phone: z.string().min(6).optional(),
+  height: z.string().max(20).optional(),
+  stylePrefs: z.array(z.string()).optional(),
 });
 router.patch("/me", requireAuth, async (req, res) => {
   const parsed = updateProfileSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Données invalides." });
 
-  const user = await prisma.user.update({ where: { id: req.user.id }, data: parsed.data });
+  const data = { ...parsed.data };
+  if (data.stylePrefs) data.stylePrefs = JSON.stringify(data.stylePrefs);
+
+  // Si le numéro change, on redemande une vérification (l'ancien code/badge n'a plus de sens).
+  if (data.phone) {
+    const current = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (current && current.phone !== data.phone) {
+      data.phoneVerified = false;
+      data.phoneVerifyCodeHash = null;
+      data.phoneVerifyExpiresAt = null;
+    }
+  }
+
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
   res.json({ user: await withStats(user) });
+});
+
+// POST /api/auth/me/send-phone-code — génère un code à 6 chiffres et l'envoie par SMS
+// (utilise Twilio si TWILIO_* est configuré dans .env, sinon log le code côté serveur pour tester en dev).
+router.post("/me/send-phone-code", requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user) return res.status(404).json({ error: "Utilisateur introuvable." });
+  if (!user.phone) return res.status(400).json({ error: "Ajoute d'abord un numéro de téléphone à ton profil." });
+  if (user.phoneVerified) return res.json({ message: "Ton numéro est déjà vérifié.", alreadyVerified: true });
+
+  const code = String(crypto.randomInt(100000, 1000000)); // code à 6 chiffres
+  const phoneVerifyCodeHash = crypto.createHash("sha256").update(code).digest("hex");
+  const phoneVerifyExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+  await prisma.user.update({ where: { id: user.id }, data: { phoneVerifyCodeHash, phoneVerifyExpiresAt } });
+
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER) {
+    try {
+      const creds = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+      const smsRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+        method: "POST",
+        headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          To: user.phone, From: process.env.TWILIO_FROM_NUMBER,
+          Body: `SeconDIY : ton code de vérification est ${code} (valable 10 minutes).`,
+        }),
+      });
+      if (!smsRes.ok) {
+        const body = await smsRes.text();
+        console.error(`Twilio a refusé l'envoi du SMS (statut ${smsRes.status}) :`, body);
+      }
+    } catch (err) {
+      console.error("Échec réseau lors de l'envoi du SMS :", err.message);
+    }
+  } else {
+    // Aucun fournisseur SMS configuré : on log le code côté serveur pour pouvoir tester/débugger.
+    console.log(`[verify-phone] Aucun TWILIO_* configuré. Code de vérification pour ${user.phone} : ${code}`);
+  }
+
+  res.json({ message: "Un code de vérification a été envoyé par SMS." });
+});
+
+// POST /api/auth/me/verify-phone-code { code } — vérifie le code et pose le badge "Compte vérifié"
+const verifyPhoneSchema = z.object({ code: z.string().min(4).max(8) });
+router.post("/me/verify-phone-code", requireAuth, async (req, res) => {
+  const parsed = verifyPhoneSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Code invalide." });
+
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user || !user.phoneVerifyCodeHash || !user.phoneVerifyExpiresAt) {
+    return res.status(400).json({ error: "Demande d'abord un nouveau code." });
+  }
+  if (user.phoneVerifyExpiresAt < new Date()) {
+    return res.status(400).json({ error: "Ce code a expiré, redemande-en un nouveau." });
+  }
+  const codeHash = crypto.createHash("sha256").update(parsed.data.code).digest("hex");
+  if (codeHash !== user.phoneVerifyCodeHash) {
+    return res.status(400).json({ error: "Code incorrect." });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { phoneVerified: true, phoneVerifyCodeHash: null, phoneVerifyExpiresAt: null },
+  });
+  res.json({ user: await withStats(updated) });
 });
 
 // POST /api/auth/me/password — changer son mot de passe (vérifie l'ancien d'abord)

@@ -80,6 +80,10 @@ export const api = {
     if (!res.ok && res.status !== 204) return handle(res);
   }),
   getMyReviews: () => fetch(`${API_URL}/auth/me/reviews`, { headers: authHeaders() }).then(handle),
+  sendPhoneCode: () => fetch(`${API_URL}/auth/me/send-phone-code`, { method: "POST", headers: authHeaders() }).then(handle),
+  verifyPhoneCode: (code) => fetch(`${API_URL}/auth/me/verify-phone-code`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ code }),
+  }).then(handle),
 
   // Annonces
   getListings: async (params = {}) => {

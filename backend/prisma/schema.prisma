@@ -20,11 +20,17 @@ model User {
   firstName     String?
   lastName      String?
   phone         String?
+  phoneVerified Boolean    @default(false)
+  phoneVerifyCodeHash    String?
+  phoneVerifyExpiresAt   DateTime?
   age           Int?
   address       String?
+  country       String?    @default("Maroc")
   city          String?
   avatarUrl     String?
   bio           String?
+  height        String?
+  stylePrefs    String?    // JSON array de styles préférés, ex: ["Vintage","Streetwear"]
   trustBadge    Boolean    @default(false)
   role          String     @default("USER") // "USER" | "ADMIN"
   newsletterOptIn Boolean  @default(false)
