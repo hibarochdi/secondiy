@@ -14,7 +14,7 @@ const app = express();
 // En développement, on autorise tous les ports localhost (Vite peut choisir
 // 5173, 5174... si le port par défaut est déjà pris). En production, on autorise
 // CLIENT_URL (peut contenir plusieurs origines séparées par des virgules, ex:
-// "https://secondiy.store,https://www.secondiy.store") ainsi que les URLs de
+// "https://secondiy.vercel.app,https://www.secondiy.ma") ainsi que les URLs de
 // preview Vercel (*.vercel.app) pour ne pas se bloquer soi-même à chaque déploiement.
 const allowedOrigins = (process.env.CLIENT_URL || "")
   .split(",")
