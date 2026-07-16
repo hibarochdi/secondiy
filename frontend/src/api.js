@@ -70,6 +70,12 @@ export const api = {
   changePassword: (currentPassword, newPassword) => fetch(`${API_URL}/auth/me/password`, {
     method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ currentPassword, newPassword }),
   }).then(handle),
+  forgotPassword: (email) => fetch(`${API_URL}/auth/forgot-password`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  }).then(handle),
+  resetPassword: (email, token, newPassword) => fetch(`${API_URL}/auth/reset-password`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, token, newPassword }),
+  }).then(handle),
   deleteAccount: () => fetch(`${API_URL}/auth/me`, { method: "DELETE", headers: authHeaders() }).then(res => {
     if (!res.ok && res.status !== 204) return handle(res);
   }),

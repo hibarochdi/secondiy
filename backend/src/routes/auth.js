@@ -198,7 +198,7 @@ router.post("/forgot-password", async (req, res) => {
 
   if (process.env.RESEND_API_KEY) {
     try {
-      await fetch("https://api.resend.com/emails", {
+      const emailRes = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -208,8 +208,16 @@ router.post("/forgot-password", async (req, res) => {
           html: `<p>Bonjour ${user.name},</p><p>Clique sur ce lien pour choisir un nouveau mot de passe (valable 1h) :</p><p><a href="${resetLink}">${resetLink}</a></p><p>Si tu n'es pas à l'origine de cette demande, ignore cet email.</p>`,
         }),
       });
+      // Important : un fetch qui aboutit (pas d'erreur réseau) ne veut pas dire que Resend a accepté
+      // l'email — il faut vérifier le vrai statut de la réponse, sinon l'échec passe inaperçu.
+      if (!emailRes.ok) {
+        const body = await emailRes.text();
+        console.error(`Resend a refusé l'envoi (statut ${emailRes.status}) :`, body);
+      } else {
+        console.log(`Email de réinitialisation envoyé avec succès à ${user.email}`);
+      }
     } catch (err) {
-      console.error("Échec d'envoi de l'email de réinitialisation :", err.message);
+      console.error("Échec réseau lors de l'envoi de l'email de réinitialisation :", err.message);
     }
   } else {
     // Aucun service d'email configuré : on log le lien côté serveur pour pouvoir tester/débugger.
