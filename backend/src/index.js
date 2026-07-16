@@ -12,15 +12,24 @@ const usersRoutes = require("./routes/users");
 const app = express();
 
 // En développement, on autorise tous les ports localhost (Vite peut choisir
-// 5173, 5174... si le port par défaut est déjà pris). En production, ne
-// laisser passer que CLIENT_URL défini dans .env.
-const allowedOrigin = process.env.CLIENT_URL;
+// 5173, 5174... si le port par défaut est déjà pris). En production, on autorise
+// CLIENT_URL (peut contenir plusieurs origines séparées par des virgules, ex:
+// "https://secondiy.store,https://www.secondiy.store") ainsi que les URLs de
+// preview Vercel (*.vercel.app) pour ne pas se bloquer soi-même à chaque déploiement.
+const allowedOrigins = (process.env.CLIENT_URL || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, "")) // enlève un éventuel slash final
+  .filter(Boolean);
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // requêtes sans origine (curl, apps mobiles)
-    if (allowedOrigin && origin === allowedOrigin) return callback(null, true);
-    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true); // tout port localhost en dev
-    callback(new Error("Origine non autorisée par CORS"));
+    if (!origin) return callback(null, true); // requêtes sans origine (curl, apps mobiles, health checks)
+    const cleanOrigin = origin.replace(/\/$/, "");
+    if (allowedOrigins.includes(cleanOrigin)) return callback(null, true);
+    if (/^http:\/\/localhost:\d+$/.test(cleanOrigin)) return callback(null, true); // tout port localhost en dev
+    if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(cleanOrigin)) return callback(null, true); // previews Vercel
+    console.warn(`[CORS] Origine refusée : ${origin}. Ajoute-la à CLIENT_URL dans les variables d'environnement du backend si elle est légitime.`);
+    return callback(null, false); // refuse sans lever d'exception (évite un 500 qui masque la vraie cause)
   },
 }));
 app.use(express.json({ limit: "5mb" })); // limite plus haute pour accepter des photos en base64
