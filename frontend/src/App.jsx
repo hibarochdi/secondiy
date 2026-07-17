@@ -1163,7 +1163,9 @@ function AIChatbot({ onOpenProduct, listings }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const endRef = useRef(null);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages, typing, open]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, typing, open]);
 
   const send = async (text) => {
     if (!text.trim()) return;
