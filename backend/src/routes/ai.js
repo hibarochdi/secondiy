@@ -150,8 +150,8 @@ router.post("/chat", optionalAuth, async (req, res) => {
     // profil, on l'utilise en repli quand il ne précise pas de taille dans sa phrase.
     let rememberedSize = null;
     if (req.user?.id) {
-      const profile = await prisma.user.findUnique({ where: { id: req.user.id }, select: { size: true } });
-      rememberedSize = profile?.size || null;
+      const profile = await prisma.user.findUnique({ where: { id: req.user.id }, select: { height: true } });
+      rememberedSize = profile?.height || null;
     }
 
     if (process.env.ANTHROPIC_API_KEY) {
